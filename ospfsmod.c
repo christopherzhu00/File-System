@@ -735,7 +735,7 @@ add_block(ospfs_inode_t *oi)
 	
 	if(n < OSPFS_NDIRECT) // satisfies direct block so we make one
 	{
-		
+
 	}
 	
 	
