@@ -442,18 +442,27 @@ ospfs_dir_readdir(struct file *filp, void *dirent, filldir_t filldir)
 		if (ok_so_far >= 0)
 			f_pos++;
 	}
-
+	
+	
+	uint32_t byte_offset = 0;
+	uint32_t size = dir_oi->oi_size;
 	// actual entries
 	while (r == 0 && ok_so_far >= 0 && f_pos >= 2) {
 		ospfs_direntry_t *od;
 		ospfs_inode_t *entry_oi;
-
+		
+		
+		 byte_offset = (OSPFS_DIRENTRY_SIZE) * (f_pos - 2);
 		/* If at the end of the directory, set 'r' to 1 and exit
 		 * the loop.  For now we do this all the time.
 		 *
 		 * EXERCISE: Your code here */
-		r = 1;		/* Fix me! */
-		break;		/* Fix me! */
+		
+		if(size <= byte_offset)			// reached the end of directory
+		{
+			r = 1;		
+			break;		
+		}
 
 		/* Get a pointer to the next entry (od) in the directory.
 		 * The file system interprets the contents of a
@@ -476,6 +485,30 @@ ospfs_dir_readdir(struct file *filp, void *dirent, filldir_t filldir)
 		 */
 
 		/* EXERCISE: Your code here */
+		// Gather location and data of inode
+		od = ospfs_inode_data(dir_oi, byte_offset);
+		entry_oi = ospfs_inode(od->od_ino);
+		
+		if(entry_oi > 0)
+		{
+			switch(entry_oi->oi_ftype)
+			{
+				case OSPFS_FTYPE_DIR:
+					ok_so_far = filldir(dirent, od->od_name, strlen(od->od_name), fpos, od->od_ino, DT_DIR);
+					break;
+				case OSPFS_FTYPE_SYMLINK:
+					ok_so_far = filldir(dirent, od->od_name, strlen(od->od_name), fpos, od->od_ino, DT_LNK);
+					break;
+				case OSPFS_FTYPE_REG:
+					ok_so_far = filldir(dirent, od->od_name, strlen(od->od_name), fpos, od->od_ino, DT_REG);
+					break;
+				default:
+					r = 1;		// error
+					continue;
+					break;
+			}
+		}
+		f_pos +=1;
 	}
 
 	// Save the file position and return!
@@ -521,6 +554,13 @@ ospfs_unlink(struct inode *dirino, struct dentry *dentry)
 
 	od->od_ino = 0;
 	oi->oi_nlink--;
+	
+	//handle symbolic link case
+	if((oi->oi_nlink == 0) && (oi->oi_ftype != OSPFS_FTYPE_SYMLINK))
+	{
+		change_size(oi, 0);
+	}
+	
 	return 0;
 }
 
@@ -684,12 +724,27 @@ add_block(ospfs_inode_t *oi)
 {
 	// current number of blocks in file
 	uint32_t n = ospfs_size2nblocks(oi->oi_size);
-
+	if(n >= OSPFS_MAXFILEBLKS)
+	{
+		return -ENOSPC;
+	}
+	if(n < 0)
+	{
+		return -EIO;
+	}
+	
+	if(n < OSPFS_NDIRECT) // satisfies direct block so we make one
+	{
+		
+	}
+	
+	
 	// keep track of allocations to free in case of -ENOSPC
 	uint32_t *allocated[2] = { 0, 0 };
 
 	/* EXERCISE: Your code here */
-	return -EIO; // Replace this line
+	oi->oi_size += OSPFS_BLKSIZE;
+	return 0;
 }
 
 
