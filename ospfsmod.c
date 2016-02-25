@@ -724,6 +724,8 @@ add_block(ospfs_inode_t *oi)
 {
 	// current number of blocks in file
 	uint32_t n = ospfs_size2nblocks(oi->oi_size);
+	uint32_t* indirect2;
+	uint32_t* indirect;
 	// keep track of allocations to free in case of -ENOSPC
 	uint32_t *allocated[2] = { 0, 0 };
 	if(n >= OSPFS_MAXFILEBLKS)
@@ -753,6 +755,9 @@ add_block(ospfs_inode_t *oi)
 		}
 		memset(ospfs_block(allocated[0]), 0, OSPFS_BLKSIZE);
 		oi->oi_indirect = allocated[0];
+		
+		indirect = ospfs_block(oi->oi_indirect);
+		indirect[direct_index(n)] = init;
 	}
 	else 	// doubley indirect
 	{
@@ -765,7 +770,10 @@ add_block(ospfs_inode_t *oi)
 				free_block(init);
 				return -ENOSPC;
 			}
+			memset(ospfs_block(allocated[1], 0, OSPFS_BLKSIZE));
 			oi->oi_indirect2 = allocated[1];
+			
+			indirect2 = ospfs_block(oi->oi_indirect2);
 		}
 		else if((n - (OSPFS_NINDIRECT + OSPFS_NDIRECT)) % OSPFS_NINDIRECT == 0) //need to make new indirect block
 		{
@@ -775,17 +783,17 @@ add_block(ospfs_inode_t *oi)
 				free_block(init);
 				free_block(allocated[1]);
 				return -ENOSPC;
-			}	
+			}
+			memset(ospfs_block(allocated[0], 0, OSPFS_BLKSIZE));
+			indirect2[indir_index(n)] = allocated[0];
 		}
+		indirect = ospfs_block(allocated[0]);
+		indirect[(n - (OSPFS_NINDIRECT + OSPFS_NDIRECT)) % OSPFS_NINDIRECT] = init;
 	}
-	//SOMETHING TO DO WITH POINTERS?
-	
-	
-	
-
+	//SOMETHING TO DO WITH POINTERS?)
 
 	/* EXERCISE: Your code here */
-	oi->oi_size += OSPFS_BLKSIZE;
+	oi->oi_size += (OSPFS_BLKSIZE) * (n+1);
 	return 0;
 }
 
@@ -817,7 +825,16 @@ remove_block(ospfs_inode_t *oi)
 {
 	// current number of blocks in file
 	uint32_t n = ospfs_size2nblocks(oi->oi_size);
-	
+	uint32_t* indirect2;
+	uint32_t* indirect;
+	if(n == 0)
+	{
+		return 0;
+	}
+	else
+	{
+		n -= 1;			// update index
+	}
 	/* EXERCISE: Your code here */
 	if(n < 0)
 	{
@@ -833,10 +850,16 @@ remove_block(ospfs_inode_t *oi)
 	}
 	else if(n > (OSPFS_NINDIRECT + OSPFS_NDIRECT) && n < OSPFS_MAXFILEBLKS)	// free indirect^2 block 
 	{
-		free_block(oi->oi_indirect);
-		oi->oi_indirect = 0;
-		free_block(oi->oi_indirect2);
-		oi->oi_indirect2 = 0;
+		if(direct_index(n) == 0)
+		{
+			free_block(oi->oi_indirect);
+			oi->oi_indirect = 0;
+		}
+		if(indir_index(n) == 0)
+		{
+			free_block(oi->oi_indirect2);
+			oi->oi_indirect2 = 0;
+		}
 	}
 	
 	oi->oi_size -= OSPFS_BLKSIZE;
