@@ -745,7 +745,7 @@ add_block(ospfs_inode_t *oi)
 	{
 		oi->oi_direct[n] = init;
 	}
-	else if(n == OSPFS_NDIRECT)	// indirect
+	else if(n == OSPFS_NDIRECT)	// indirect needs to be created
 	{
 		allocated[0] = allocate_block();
 		if(!(allocated[0]))
@@ -759,9 +759,13 @@ add_block(ospfs_inode_t *oi)
 		indirect = ospfs_block(oi->oi_indirect);
 		indirect[direct_index(n)] = init;
 	}
+	else if (n > OSPFS_NDIRECT && n < OSPFS_NDIRECT + OSPFS_NINDIRECT) { // indirect
+		indirect = ospfs_block(oi->oi_indirect);
+		indirect[direct_index(n)] = init;
+	}
 	else 	// doubley indirect
 	{
-		if(n == OSPFS_NINDIRECT + OSPFS_NDIRECT)	
+		if(n == OSPFS_NINDIRECT + OSPFS_NDIRECT)	// create doubly-indirect
 		{
 			allocated[1] = allocate_block();
 			if(!(allocated[1]))
@@ -775,7 +779,7 @@ add_block(ospfs_inode_t *oi)
 			
 			indirect2 = ospfs_block(oi->oi_indirect2);
 		}
-		else if((n - (OSPFS_NINDIRECT + OSPFS_NDIRECT)) % OSPFS_NINDIRECT == 0) //need to make new indirect block
+		if((n - (OSPFS_NINDIRECT + OSPFS_NDIRECT)) % OSPFS_NINDIRECT == 0) // need to make new indirect block
 		{
 			allocated[0] = allocate_block();
 			if(!allocated[0])
@@ -793,7 +797,7 @@ add_block(ospfs_inode_t *oi)
 	//SOMETHING TO DO WITH POINTERS?)
 
 	/* EXERCISE: Your code here */
-	oi->oi_size += (OSPFS_BLKSIZE) * (n+1);
+	oi->oi_size = (OSPFS_BLKSIZE) * (n+1);
 	return 0;
 }
 
@@ -829,7 +833,7 @@ remove_block(ospfs_inode_t *oi)
 	uint32_t* indirect;
 	if(n == 0)
 	{
-		return 0;
+		return -EIO;
 	}
 	else
 	{
@@ -840,16 +844,32 @@ remove_block(ospfs_inode_t *oi)
 	{
 		return -EIO; 
 	}
-	free_block(oi->oi_direct[n]);			// free primary block
-	oi->oi_direct[n] = 0;
-	
-	if(n > OSPFS_NDIRECT && n < (OSPFS_NINDIRECT + OSPFS_NDIRECT))	// free indirect block
-	{
-		free_block(oi->oi_indirect);
-		oi->oi_indirect = 0;
+	if (n < OSPFS_NDIRECT) {   // direct
+		free_block(oi->oi_direct[n]);			// free primary block
+		oi->oi_direct[n] = 0;
 	}
-	else if(n > (OSPFS_NINDIRECT + OSPFS_NDIRECT) && n < OSPFS_MAXFILEBLKS)	// free indirect^2 block 
+	
+	if(n >= OSPFS_NDIRECT && n < (OSPFS_NINDIRECT + OSPFS_NDIRECT))	// free indirect block
 	{
+		indirect = ospfs_block(oi->oi_indirect);
+		free_block(indirect[direct_index(n)]);
+		indirect[direct_index(n)] = 0;
+		
+		
+		if(direct_index(n) == 0)
+		{
+			free_block(oi->oi_indirect);
+			oi->oi_indirect = 0;
+		}
+	}
+	else if(n >= (OSPFS_NINDIRECT + OSPFS_NDIRECT) && n < OSPFS_MAXFILEBLKS)	// free indirect^2 block 
+	{
+		indirect2 = ospfs_block(oi->oi_indirect2);
+		uint32_t index = indirect2[indir_index(n)];
+		indirect = ospfs_block(index);
+		free_block(indirect[direct_index(n)]);
+		indirect[direct_index(n)] = 0;
+		
 		if(direct_index(n) == 0)
 		{
 			free_block(oi->oi_indirect);
@@ -862,7 +882,7 @@ remove_block(ospfs_inode_t *oi)
 		}
 	}
 	
-	oi->oi_size -= OSPFS_BLKSIZE;
+	oi->oi_size = OSPFS_BLKSIZE * n;
 	return 0;
 }
 
